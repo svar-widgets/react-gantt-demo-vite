@@ -1,0 +1,46 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#root {
+  height: 100%;
+}
+
+.wx-theme {
+  height: 100%;
+}
+
+/* Demo page layout styles */
+.demo-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.demo-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.demo-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.demo-header p {
+  margin: 0.25rem 0 0;
+  color: #666;
+}
+
+.demo-main {
+  flex: 1;
+  min-height: 0;
+}
