@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@svar-ui/react-gantt": "^2.4.5",
+    "@xstate/react": "^6.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "xstate": "^5.25.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
