@@ -1,5 +1,5 @@
 {
-  "name": "svar-gantt-react-vite-demo",
+  "name": "svar-gantt-react-mobx-demo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@svar-ui/react-gantt": "^2.4.5",
+    "mobx": "^6.13.5",
+    "mobx-react-lite": "^4.0.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
