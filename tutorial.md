@@ -1,6 +1,6 @@
-# Using SVAR Gantt with React and Vite
+# Using SVAR Gantt with React and Valtio
 
-This tutorial walks you through integrating the SVAR Gantt chart component into a React application using Vite. We'll build it step by step, encountering and solving common issues along the way.
+This tutorial walks you through integrating the SVAR Gantt chart component into a React application using Vite, with Valtio for state management. We'll build it step by step, encountering and solving common issues along the way.
 
 ## Creating the Project
 
@@ -24,40 +24,10 @@ With the package installed, let's create a component to display the Gantt chart.
 ```tsx
 import { Gantt } from "@svar-ui/react-gantt";
 
-const tasks = [
-  {
-    id: 1,
-    text: "Project Planning",
-    start: new Date(2024, 0, 1),
-    end: new Date(2024, 0, 10),
-    progress: 100,
-    type: "summary",
-    open: true,
-  },
-  {
-    id: 2,
-    text: "Requirements Gathering",
-    start: new Date(2024, 0, 1),
-    end: new Date(2024, 0, 5),
-    progress: 100,
-    parent: 1,
-  },
-  // ... more tasks
-];
-
-const links = [
-  { id: 1, source: 2, target: 3, type: "e2s" },
-];
-
-const scales = [
-  { unit: "month", step: 1, format: "%M %Y" },
-  { unit: "week", step: 1, format: "Week %w" },
-];
-
 export default function GanttChart() {
   return (
     <div style={{ height: "600px", width: "100%" }}>
-      <Gantt tasks={tasks} links={links} scales={scales} />
+      <Gantt tasks={[]} links={[]} />
     </div>
   );
 }
@@ -96,20 +66,18 @@ SVAR components use a theme provider for visual styling. We need to wrap our Gan
 import { Gantt, Willow } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
 
-// ... tasks, links, scales definitions ...
-
 export default function GanttChart() {
   return (
     <div style={{ height: "600px", width: "100%" }}>
       <Willow>
-        <Gantt tasks={tasks} links={links} scales={scales} />
+        <Gantt tasks={[]} links={[]} />
       </Willow>
     </div>
   );
 }
 ```
 
-That's more like it — styled headers, colored task bars, proper visual feedback.
+That's more like it — styled headers and proper visual feedback. But our Gantt is empty. Before we add hardcoded data, let's set up proper state management.
 
 ## Fixing the Layout
 
@@ -118,7 +86,7 @@ If you're going for a flexible layout where the Gantt should fill available spac
 ```tsx
 <div style={{ height: "100%", width: "100%" }}>
   <Willow>
-    <Gantt tasks={tasks} links={links} scales={scales} />
+    <Gantt tasks={[]} links={[]} />
   </Willow>
 </div>
 ```
@@ -145,6 +113,160 @@ The `.wx-theme` class is used internally by SVAR's theme providers. Without expl
 
 Now the Gantt properly fills its container.
 
+## Adding Valtio for State Management
+
+Before adding data to our Gantt, let's set up Valtio to manage it properly. This approach lets us load data from an API, persist changes, and share state across components.
+
+### Why Valtio?
+
+Valtio offers a refreshingly simple approach to state management using JavaScript Proxies. Unlike traditional state managers that require actions, reducers, or immutable updates, Valtio lets you work with state naturally:
+
+```tsx
+// Define state
+const state = proxy({ count: 0 });
+
+// Update state - just mutate it directly
+state.count++;
+
+// Read state reactively in React
+const snap = useSnapshot(state);
+return <div>{snap.count}</div>;
+```
+
+This makes Valtio particularly well-suited for managing complex UI state like a Gantt chart, where you want simplicity without sacrificing reactivity.
+
+### The Stateful Island Pattern
+
+Complex UI widgets — rich text editors, data grids, map components, Gantt charts — typically maintain their own internal state. This isn't a limitation; it's by design:
+
+- **Performance** — They need fine-grained control over rendering, often with virtualization. External state management would add latency.
+- **Complexity** — Internal state includes transient UI concerns (drag positions, scroll offsets, intermediate edit states) that don't belong in application state.
+- **Encapsulation** — The component is a self-contained unit with its own optimized update cycles.
+
+The SVAR Gantt follows this pattern. When you edit a task, drag a bar, or create a link, the component updates immediately without waiting for external state to propagate back. This makes the UI feel responsive.
+
+So where does Valtio fit in? Instead of trying to mirror the Gantt's internal state, use Valtio for:
+
+- **Initial data loading** — Provide data to the Gantt on mount
+- **Persistence** — Intercept data changes and sync to your backend
+- **Cross-component communication** — Share relevant state (like the selected task) with other parts of your app
+
+The Gantt remains the source of truth during the session. Valtio acts as a messenger, not a mirror.
+
+### Setting Up the Store
+
+Install Valtio:
+
+```bash
+npm install valtio
+```
+
+Create the store with initial data. We'll store tasks and links that get loaded into the Gantt:
+
+`src/store/ganttStore.ts`:
+
+```tsx
+import { proxy } from "valtio";
+import type { ITask, ILink, TID } from "@svar-ui/gantt-store";
+
+interface GanttState {
+  tasks: ITask[];
+  links: ILink[];
+  scales: { unit: string; step: number; format: string }[];
+  selectedTaskId: number | null;
+}
+
+export const ganttStore = proxy<GanttState>({
+  tasks: [
+    {
+      id: 1,
+      text: "Project Planning",
+      start: new Date(2024, 0, 1),
+      end: new Date(2024, 0, 10),
+      progress: 100,
+      type: "summary",
+      open: true,
+    },
+    {
+      id: 2,
+      text: "Requirements Gathering",
+      start: new Date(2024, 0, 1),
+      end: new Date(2024, 0, 5),
+      progress: 100,
+      parent: 1,
+    },
+    {
+      id: 3,
+      text: "Design Phase",
+      start: new Date(2024, 0, 6),
+      end: new Date(2024, 0, 12),
+      progress: 60,
+      parent: 1,
+    },
+  ],
+  links: [{ id: 1, source: 2, target: 3, type: "e2s" }],
+  scales: [
+    { unit: "month", step: 1, format: "%M %Y" },
+    { unit: "week", step: 1, format: "Week %w" },
+  ],
+  selectedTaskId: null,
+});
+
+// Actions - simple functions that mutate the proxy directly
+export function selectTask(id: number | null) {
+  ganttStore.selectedTaskId = id;
+}
+```
+
+Notice how different this is from traditional state management:
+
+- **No reducers** — State is defined once with `proxy()`
+- **No actions** — Functions mutate the proxy directly
+- **No Provider** — The store is just an export, no wrapping needed
+
+Create a barrel export for convenient imports:
+
+`src/store/index.ts`:
+
+```tsx
+export { ganttStore, selectTask } from "./ganttStore";
+```
+
+### Loading Data into the Gantt
+
+Now update `GanttChart.tsx` to read data from Valtio:
+
+```tsx
+import { useSnapshot } from "valtio";
+import { Gantt, Willow } from "@svar-ui/react-gantt";
+import "@svar-ui/react-gantt/all.css";
+import { ganttStore } from "../store";
+
+export default function GanttChart() {
+  const snap = useSnapshot(ganttStore);
+
+  // Convert readonly snapshot arrays to mutable arrays for Gantt component
+  const tasks = [...snap.tasks] as typeof ganttStore.tasks;
+  const links = [...snap.links] as typeof ganttStore.links;
+  const scales = [...snap.scales] as typeof ganttStore.scales;
+
+  return (
+    <div style={{ height: "100%", width: "100%" }}>
+      <Willow>
+        <Gantt tasks={tasks} links={links} scales={scales} />
+      </Willow>
+    </div>
+  );
+}
+```
+
+A few things to note:
+
+- **`useSnapshot(ganttStore)`** — Returns a reactive, readonly snapshot of the store. When `ganttStore.tasks` changes anywhere in your app, this component re-renders.
+- **Array spreading** — Valtio's snapshot returns readonly arrays for type safety. Since the Gantt component expects mutable arrays, we spread them into new arrays. This is a shallow copy, which is efficient since we're not modifying the task objects themselves.
+
+Now our Gantt displays data loaded from Valtio. In a real application, you'd fetch this data from an API and update the store.
+
 ## Enabling Edit Operations
 
 So far our Gantt displays tasks, but users can't edit them. Let's add an editor panel that allows modifying task properties.
@@ -152,14 +274,20 @@ So far our Gantt displays tasks, but users can't edit them. Let's add an editor 
 The Gantt component exposes its API through an `init` callback. We can capture this reference and pass it to an `Editor` component:
 
 ```tsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useSnapshot } from "valtio";
 import { Gantt, Willow, Editor } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
-
-// ... tasks, links, scales definitions ...
+import { ganttStore } from "../store";
 
 export default function GanttChart() {
+  const snap = useSnapshot(ganttStore);
   const [api, setApi] = useState(null);
+
+  // Convert readonly snapshot arrays to mutable arrays for Gantt component
+  const tasks = useMemo(() => snap.tasks.map(x => ({ ...x })) as typeof ganttStore.tasks, [snap.tasks]);
+  const links = useMemo(() => [...snap.links] as typeof ganttStore.links, [snap.links]);
+  const scales = useMemo(() => [...snap.scales] as typeof ganttStore.scales, [snap.scales]);
 
   return (
     <div style={{ height: "100%", width: "100%" }}>
@@ -187,19 +315,27 @@ To provide quick access to common operations like adding tasks, deleting, and in
 The toolbar needs the Gantt's API reference to trigger actions. We pass it the same `api` state:
 
 ```tsx
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useSnapshot } from "valtio";
 import { Gantt, Willow, Editor, Toolbar } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
-
-// ... tasks, links, scales definitions ...
+import { ganttStore } from "../store";
 
 export default function GanttChart() {
+  const snap = useSnapshot(ganttStore);
   const [api, setApi] = useState(null);
+
+  // Convert readonly snapshot arrays to mutable arrays for Gantt component
+  const tasks = useMemo(() => snap.tasks.map(x => ({ ...x })) as typeof ganttStore.tasks, [snap.tasks]);
+  const links = useMemo(() => [...snap.links] as typeof ganttStore.links, [snap.links]);
+  const scales = useMemo(() => [...snap.scales] as typeof ganttStore.scales, [snap.scales]);
 
   return (
     <div style={{ height: "100%", width: "100%" }}>
       <Willow>
-        <Toolbar api={api} />
+        <div style={{ borderBottom: "1px solid #e5e5e5" }}>
+          <Toolbar api={api} />
+        </div>
         <Gantt tasks={tasks} links={links} scales={scales} init={setApi} />
         {api && <Editor api={api} />}
       </Willow>
@@ -208,66 +344,162 @@ export default function GanttChart() {
 }
 ```
 
-The toolbar appears above the Gantt and provides buttons for:
+The container around the Toolbar renders a border between it and the Gantt. The toolbar appears above the Gantt and provides buttons for:
 
 - Adding new tasks
 - Deleting selected tasks
 - Indenting/outdenting tasks (changing hierarchy)
 - Expanding/collapsing task groups
 
-Clicking these buttons triggers actions through the Gantt's API. With our static data setup, changes will be reflected in the UI but won't persist after a page refresh.
+Clicking these buttons triggers actions through the Gantt's API. Changes are reflected in the UI, but they're not yet connected to Valtio for persistence.
 
-## Complete Component Code
+## Syncing Changes to Valtio
 
-Here's the full `GanttChart.tsx` with all pieces in place:
+Now that editing works, let's wire the Gantt's events to notify our persistence layer. This allows us to sync changes with your backend.
+
+First, create a helper for date serialization:
+
+`src/store/helpers.ts`:
 
 ```tsx
-import { useState } from "react";
+export function serializeTask<T extends { start?: Date; end?: Date }>(task: T): T {
+  return {
+    ...task,
+    start: task.start instanceof Date ? task.start.toISOString() : task.start,
+    end: task.end instanceof Date ? task.end.toISOString() : task.end,
+  };
+}
+```
+
+### Why Serialize Dates?
+
+When persisting task data to an API or localStorage, Date objects need to be converted to strings. The `serializeTask` helper converts Date objects to ISO strings, which are universally compatible with APIs and can be easily parsed back into Date objects.
+
+### Persistence Notifications
+
+Create notification functions that will be called when the Gantt fires events:
+
+`src/store/persistence.ts`:
+
+```tsx
+import type { ITask, ILink, TID } from "@svar-ui/gantt-store";
+import { serializeTask } from "./helpers";
+
+// Persistence notification functions
+// In a real app, replace console.log with API calls
+
+export function notifyTaskAdded(task: Partial<ITask>) {
+  console.log("[Persistence] Task added:", serializeTask(task));
+}
+
+export function notifyTaskUpdated(id: TID, task: Partial<ITask>) {
+  console.log("[Persistence] Task updated:", { id, task: serializeTask(task) });
+}
+
+export function notifyTaskDeleted(id: TID) {
+  console.log("[Persistence] Task deleted:", { id });
+}
+
+export function notifyLinkAdded(link: Partial<ILink>) {
+  console.log("[Persistence] Link added:", link);
+}
+
+export function notifyLinkUpdated(id: TID, link: Partial<ILink>) {
+  console.log("[Persistence] Link updated:", { id, link });
+}
+
+export function notifyLinkDeleted(id: TID) {
+  console.log("[Persistence] Link deleted:", { id });
+}
+```
+
+Update the barrel export:
+
+`src/store/index.ts`:
+
+```tsx
+export { ganttStore, selectTask } from "./ganttStore";
+export { serializeTask } from "./helpers";
+export {
+  notifyTaskAdded,
+  notifyTaskUpdated,
+  notifyTaskDeleted,
+  notifyLinkAdded,
+  notifyLinkUpdated,
+  notifyLinkDeleted,
+} from "./persistence";
+```
+
+### Connecting Gantt Events
+
+Now connect the Gantt's events to these notifications:
+
+```tsx
+import { useEffect, useState, useMemo } from "react";
+import { useSnapshot } from "valtio";
 import type { IApi } from "@svar-ui/react-gantt";
 import { Gantt, Willow, Editor, Toolbar } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/all.css";
-
-const tasks = [
-  {
-    id: 1,
-    text: "Project Planning",
-    start: new Date(2024, 0, 1),
-    end: new Date(2024, 0, 10),
-    progress: 100,
-    type: "summary" as const,
-    open: true,
-  },
-  {
-    id: 2,
-    text: "Requirements Gathering",
-    start: new Date(2024, 0, 1),
-    end: new Date(2024, 0, 5),
-    progress: 100,
-    parent: 1,
-  }
-];
-
-const links = [
-  { id: 1, source: 2, target: 3, type: "e2s" },
-  { id: 2, source: 3, target: 5, type: "e2s" },
-  { id: 3, source: 5, target: 6, type: "s2s" },
-  { id: 4, source: 6, target: 7, type: "e2s" },
-  { id: 5, source: 7, target: 8, type: "e2s" },
-  { id: 6, source: 8, target: 9, type: "e2s" },
-];
-
-const scales = [
-  { unit: "month", step: 1, format: "%M %Y" },
-  { unit: "week", step: 1, format: "Week %w" },
-];
+import {
+  ganttStore,
+  selectTask,
+  notifyTaskAdded,
+  notifyTaskUpdated,
+  notifyTaskDeleted,
+  notifyLinkAdded,
+  notifyLinkUpdated,
+  notifyLinkDeleted,
+} from "../store";
 
 export default function GanttChart() {
+  const snap = useSnapshot(ganttStore);
   const [api, setApi] = useState<IApi | undefined>(undefined);
+
+  // Convert readonly snapshot arrays to mutable arrays for Gantt component
+  const tasks = useMemo(() => snap.tasks.map(x => ({ ...x })) as typeof ganttStore.tasks, [snap.tasks]);
+  const links = useMemo(() => [...snap.links] as typeof ganttStore.links, [snap.links]);
+  const scales = useMemo(() => [...snap.scales] as typeof ganttStore.scales, [snap.scales]);
+
+
+  useEffect(() => {
+    if (!api) return;
+
+    api.on("select-task", ({ id }) => {
+      selectTask(id as number);
+    });
+
+    api.on("add-task", ({ task }) => {
+      notifyTaskAdded(task);
+    });
+
+    api.on("update-task", ({ id, task, inProgress }) => {
+      if (inProgress) return; // Skip intermediate drag states
+      notifyTaskUpdated(id, task);
+    });
+
+    api.on("delete-task", ({ id }) => {
+      notifyTaskDeleted(id);
+    });
+
+    api.on("add-link", ({ link }) => {
+      notifyLinkAdded(link);
+    });
+
+    api.on("update-link", ({ id, link }) => {
+      notifyLinkUpdated(id, link);
+    });
+
+    api.on("delete-link", ({ id }) => {
+      notifyLinkDeleted(id);
+    });
+  }, [api]);
 
   return (
     <div style={{ height: "100%", width: "100%" }}>
       <Willow>
-        <Toolbar api={api} />
+        <div style={{ borderBottom: "1px solid #e5e5e5" }}>
+          <Toolbar api={api} />
+        </div>
         <Gantt tasks={tasks} links={links} scales={scales} init={setApi} />
         {api && <Editor api={api} />}
       </Willow>
@@ -276,16 +508,85 @@ export default function GanttChart() {
 }
 ```
 
-## Next Steps
+The `inProgress` check is important — during drag operations, the Gantt fires multiple `update-task` events. We only want to persist the final state.
 
-At this point you have a working Gantt chart with task editing and a toolbar. Here's where to go from here depending on what you want to build.
+Now every edit, addition, or deletion is logged with properly serialized dates. The console output will show ISO strings like `"2024-01-15T00:00:00.000Z"` instead of Date objects — ready for API calls or localStorage persistence.
 
-**Working with task data** — We used a simple array of tasks in this tutorial, but real applications need more. The [tasks API reference](https://docs.svar.dev/react/gantt/api/properties/tasks) covers all available task properties including custom fields, duration-based tasks, and handling different task types.
+## Cross-Component Communication
 
-**Setting up dependencies** — Task links define how work flows through your project. The [links API reference](https://docs.svar.dev/react/gantt/api/properties/links) explains all dependency types and how to configure lag time between connected tasks.
+The selection handler we added (`api.on("select-task", ...)`) stores the selected task ID in Valtio. This enables other components to react when the user selects a task in the Gantt.
 
-**Customizing the editor** — The default editor works well, but you might want to add custom fields or change the layout. The [editor guide](https://docs.svar.dev/react/editor/guides/initialization) shows how to configure fields, validation, and create custom editor layouts.
+Create a component that displays the current selection:
 
-**Formatting dates and scales** — The `%M %Y` format we used is just the beginning. The [localization guide](https://docs.svar.dev/react/core/guides/localization#date-and-time-format-specification) has the complete list of format specifiers and explains how to set up different locales.
+`src/components/TaskDetails.tsx`:
 
-**Adding a backend** — To persist changes, you'll need to connect the Gantt to a backend API. The `@svar-ui/gantt-data-provider` package provides a `RestDataProvider` that handles the communication. See the [REST routes documentation](https://docs.svar.dev/react/gantt/api/overview/restroutes_overview) for the expected endpoint formats.
+```tsx
+import { useSnapshot } from "valtio";
+import { ganttStore } from "../store";
+
+export default function TaskDetails() {
+  const { selectedTaskId } = useSnapshot(ganttStore);
+
+  return (
+    <footer className="task-details">
+      {selectedTaskId ? (
+        <span>Selected task ID: {selectedTaskId}</span>
+      ) : (
+        <span>No task selected</span>
+      )}
+    </footer>
+  );
+}
+```
+
+Update `src/App.tsx` to include the footer:
+
+```tsx
+import GanttChart from "./components/GanttChart";
+import TaskDetails from "./components/TaskDetails";
+
+export default function App() {
+  return (
+    <>
+      <GanttChart />
+      <TaskDetails />
+    </>
+  );
+}
+```
+
+This component knows nothing about the Gantt — it just reads from Valtio. Notice how simple the integration is:
+
+- **No Provider wrapper** — Unlike Redux or Context, Valtio doesn't need any setup in your component tree
+- **Direct store access** — Just import the store and use `useSnapshot()`
+- **Automatic reactivity** — The component re-renders when `selectedTaskId` changes
+
+In a real application, this could be a details panel, a comments section, or any UI that needs to respond to the user's current focus in the Gantt.
+
+## Summary and Next Steps
+
+In this tutorial we integrated the SVAR Gantt with Valtio using the **Stateful Island** pattern:
+
+- **Initial data** is stored in Valtio and passed to the Gantt on mount
+- **The Gantt owns runtime state** — edits happen instantly without round-trips through Valtio
+- **Notification functions** are called for persistence but don't modify Valtio state
+- **Cross-component state** (like `selectedTaskId`) lives in Valtio for other components to consume
+
+This architecture keeps the UI responsive while maintaining a clear data flow.
+
+### Next Steps for a Real Application
+
+**Data fetching** — Replace the hardcoded initial state by fetching data and updating the store:
+
+```tsx
+async function loadGanttData() {
+  const response = await api.getProjectData();
+  ganttStore.tasks = response.tasks;
+  ganttStore.links = response.links;
+}
+```
+
+**Persistence** — Replace the `console.log` calls in the notification functions with actual API requests. Consider debouncing rapid updates and handling optimistic updates with rollback on failure.
+
+**Error handling** — Add error state to the store and display notifications when persistence fails. The Gantt will still show the local changes, but users should know if their edits weren't saved.
+
